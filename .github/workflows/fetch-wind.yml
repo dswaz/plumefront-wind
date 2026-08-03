@@ -1,0 +1,41 @@
+name: Fetch HRRR wind data
+
+on:
+  schedule:
+    # :50 past every hour UTC — HRRR needs ~45min processing lag from NOAA
+    - cron: '50 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fetch-wind
+  cancel-in-progress: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ecCodes (required by cfgrib for GRIB2 parsing)
+        run: sudo apt-get update && sudo apt-get install -y libeccodes0
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch and encode latest HRRR wind
+        run: python fetch_hrrr_wind.py --out-dir .
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add wind.png wind_meta.json
+          git diff --staged --quiet || git commit -m "Update wind data $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
