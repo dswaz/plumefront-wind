@@ -1,0 +1,19 @@
+{
+  "u_min": -15.773945808410645,
+  "u_max": 14.146724700927734,
+  "v_min": -18.70395278930664,
+  "v_max": 15.938730239868164,
+  "width": 1000,
+  "height": 600,
+  "run_date": "20260802",
+  "run_hour": 23,
+  "forecast": "00",
+  "generated": "2026-08-03T00:49:52.107328+00:00",
+  "bbox": {
+    "west": -134.0,
+    "east": -61.0,
+    "south": 21.0,
+    "north": 53.0
+  },
+  "source": "NOAA HRRR 3km CONUS (reprojected to lat/lon)"
+}
