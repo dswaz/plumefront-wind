@@ -19,7 +19,7 @@ import argparse
 import json
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -43,10 +43,13 @@ def parse_args():
     return p.parse_args()
 
 
-def latest_run_hour(now_utc):
+def latest_run_target(now_utc):
     # HRRR needs ~45min to process; back off one hour from "now" to find a
-    # run that's actually finished and posted.
-    return (now_utc.hour - 1) % 24
+    # run that's actually finished and posted. Must roll the *date* back too
+    # when this crosses midnight UTC, not just wrap the hour with `% 24` —
+    # otherwise just after 00:00 UTC this asks for "today at 23z", which
+    # doesn't exist yet (it's actually yesterday's 23z run).
+    return now_utc - timedelta(hours=1)
 
 
 def build_urls(date_str, run_hour, fhour):
@@ -146,8 +149,9 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now(timezone.utc)
-    date_str = args.date or now.strftime("%Y%m%d")
-    run_hour = args.run if args.run is not None else latest_run_hour(now)
+    target = latest_run_target(now)
+    date_str = args.date or target.strftime("%Y%m%d")
+    run_hour = args.run if args.run is not None else target.hour
 
     grib_url, idx_url = build_urls(date_str, run_hour, args.forecast)
     print(f"HRRR run: {date_str} t{run_hour:02d}z f{args.forecast}", file=sys.stderr)
