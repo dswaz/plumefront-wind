@@ -2,9 +2,11 @@
 fetch_hrrr_wind.py
 
 Fetches the latest HRRR 10m wind U/V components from NOAA NOMADS via
-byte-range requests (a few MB, not the ~700MB full GRIB2 file), reprojects
-from the native Lambert Conformal Conic grid to a regular lat/lon grid, and
-encodes the result into a single RGBA PNG texture + a metadata JSON file.
+byte-range requests (a few MB, not the ~700MB full GRIB2 file), rotates them
+from grid-relative to true earth-relative (see rotate_grid_to_earth),
+reprojects from the native Lambert Conformal Conic grid to a regular lat/lon
+grid, and encodes the result into a single RGBA PNG texture + a metadata
+JSON file.
 
 Output (overwritten each run):
   wind.png       - RGBA PNG: R=U (east-west wind), G=V (north-south wind)
@@ -32,6 +34,13 @@ USER_AGENT = "plumefront-wind-fetcher (github.com/dswaz/plumefront-wind)"
 
 OUT_NX, OUT_NY = 1000, 600
 OUT_BBOX = {"west": -134.0, "east": -61.0, "south": 21.0, "north": 53.0}
+
+# HRRR's native Lambert Conformal Conic grid — standard parallel and
+# orientation (central) longitude. Fixed by the operational grid definition,
+# not something that varies per run. Used to de-rotate grid-relative winds
+# below (see rotate_grid_to_earth).
+HRRR_LATIN1 = 38.5
+HRRR_LOV = -97.5
 
 
 def parse_args():
@@ -115,6 +124,26 @@ def parse_grib2_data(grib_bytes):
         Path(tmp_path).unlink(missing_ok=True)
 
 
+def rotate_grid_to_earth(u_grid, v_grid, lons):
+    """HRRR's UGRD/VGRD at "10 m above ground" are grid-relative — relative
+    to the Lambert Conformal Conic grid's own x/y axes, not true north/east
+    — a well-known gotcha with HRRR/WRF-ARW native-grid GRIB2 output (the
+    same reason tools like wgrib2's -new_grid_winds or NCL's wrf_uvmet
+    exist). Left uncorrected, the wind *direction* drifts further from true
+    as you move away from the grid's central meridian (-97.5), which is
+    exactly the kind of mismatch-against-other-sources bug this fixes.
+    Standard LCC wind-rotation formula; doesn't touch magnitude, only
+    direction, and is a no-op exactly on the central meridian."""
+    cone = np.sin(np.radians(HRRR_LATIN1))  # secant cone constant (latin1 == latin2 for HRRR)
+    diff = lons - HRRR_LOV
+    diff = np.where(diff > 180, diff - 360, diff)
+    diff = np.where(diff < -180, diff + 360, diff)
+    alpha = np.radians(diff * cone)
+    u_earth = u_grid * np.cos(alpha) + v_grid * np.sin(alpha)
+    v_earth = -u_grid * np.sin(alpha) + v_grid * np.cos(alpha)
+    return u_earth, v_earth
+
+
 def reproject_to_latlon(data, src_lats, src_lons):
     src_points = np.column_stack([src_lons.ravel(), src_lats.ravel()])
     tgt_lons = np.linspace(OUT_BBOX["west"], OUT_BBOX["east"], OUT_NX)
@@ -164,6 +193,7 @@ def main():
 
     u, u_lats, u_lons = parse_grib2_data(u_bytes)
     v, _, _ = parse_grib2_data(v_bytes)
+    u, v = rotate_grid_to_earth(u, v, u_lons)
 
     u_ll = reproject_to_latlon(u, u_lats, u_lons)
     v_ll = reproject_to_latlon(v, u_lats, u_lons)
